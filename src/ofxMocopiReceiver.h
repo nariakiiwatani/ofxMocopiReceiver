@@ -97,59 +97,43 @@ public:
 		return socket_.Close();
 	}
 	void update() {
-		std::string buf = receiveAll();
-		if(buf.size() == 0) {
-			return;
+		while(true) {
+			std::string buf = getNextMessage();
+			if(buf.size() == 0) {
+				return;
+			}
+			read(buf);
 		}
-		read(buf);
 	}
 
 private:
 	ofxUDPManager socket_;
 	
-	std::string receiveAll() {
+	std::string getNextMessage() {
 		int available_length = socket_.PeekReceive();
 		if(available_length == 0) {
 			return {};
 		}
-		std::cout
-		<< "========packet available========" << std::endl
-		<< "length: " << available_length << std::endl;
 		std::string buf(available_length, '\0');
 		auto ptr = const_cast<char*>(buf.data());
-		const int retry_limit = 2;
-		int retry_count = 0;
-		while(available_length > 0) {
-			int length = socket_.Receive(ptr, available_length);
-			if(length == 0) {
-				if(++retry_count > retry_limit) {
-					break;
-				}
-				continue;
-			}
-			std::cout
-			<< "----packet received----" << std::endl
-			<< "length: " << length << std::endl;
-			int checked_length = 0;
-			while(checked_length < length) {
-				auto &&chunk_length = get<uint32_t>(ptr+checked_length);
-				if(length - checked_length < chunk_length) {
-					std::cout << "lack of data: " << std::endl
-					<< "required: " << chunk_length+8 << std::endl
-					<< "rest: " << length - checked_length << std::endl;
-				}
-				std::string chunk_name(ptr+checked_length+4, 4);
-				std::cout
-				<< "  name: " << chunk_name << std::endl
-				<< "length: " << chunk_length << std::endl;
-				
-				checked_length += 8+chunk_length;
-			}
-			retry_count = 0;
-			ptr += length;
-			available_length -= length;
+		int received_length = socket_.Receive(ptr, available_length);
+		if(received_length == 0 || !isValidPacket(ptr, received_length)) {
+			ofLogNotice("ofx::mocopi::Reader") << "received invalid packet";
+			return {};
 		}
+		buf.resize(received_length);
 		return buf;
+	}
+	bool isValidPacket(const char *data, std::size_t length) const {
+		int checked = 0;
+		while(checked < length) {
+			auto &&chunk_length = get<uint32_t>(data+checked);
+			checked += chunk_length + 8;
+			if(chunk_length == 0) {
+				return false;
+			}
+		}
+		return checked == length;
 	}
 };
 # pragma pack (1)
