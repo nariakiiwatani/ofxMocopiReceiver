@@ -18,6 +18,9 @@ void ofApp::draw(){
 	camera_.begin();
 	for(auto &&bone : receiver_.getBones()) {
 		bone.draw();
+		if(auto p = bone.getParent()) {
+			ofDrawArrow(p->getGlobalPosition(), bone.getGlobalPosition(), 20);
+		}
 	}
 	camera_.end();
 	if(receiver_.isSetup()) {
