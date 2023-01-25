@@ -1,5 +1,5 @@
 # ofxMocopiReceiver
-![BVH Sender（上）から受信している様子](https://user-images.githubusercontent.com/1306139/214542141-e61e7134-984d-4973-93d8-8e9fcbe10dd4.jpg)
+![BVH Sender（上）から受信している様子](https://user-images.githubusercontent.com/1306139/214546054-0fc47236-c85f-446e-97dd-fe8c588d0869.jpg)
 
 [mocopi](https://www.sony.net/Products/mocopi-dev/jp/)の[UDP送信](https://www.sony.net/Products/mocopi-dev/jp/documents/ReceiverPlugin/SendData.html)データを受信するaddonです。
 
