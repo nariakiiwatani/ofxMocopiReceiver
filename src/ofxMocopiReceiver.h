@@ -246,7 +246,16 @@ public:
 		auto bons = createReader<Reader>({"bons"}, {{receiver_, "skdf"}});
 		auto btrs = createReader<Reader>({"btrs"}, {{receiver_, "fram"}});
 		bone_ = createReader<BoneReader>({"bndt", "btdt"}, {{bons, "bons"}, {btrs, "btrs"}});
+		
+		ftyp_ = createReader<RawCopyReader>({"ftyp"}, {{receiver_, "head"}});
+		vrsn_ = createReader<RawCopyReader>({"vrsn"}, {{receiver_, "head"}});
 
+		ipad_ = createReader<RawCopyReader>({"ipad"}, {{receiver_, "sndf"}});
+		rcvp_ = createReader<RawCopyReader>({"rcvp"}, {{receiver_, "sndf"}});
+
+		fnum_ = createReader<RawCopyReader>({"fnum"}, {{receiver_, "fram"}});
+		time_ = createReader<RawCopyReader>({"time"}, {{receiver_, "fram"}});
+		
 		ofAddListener(bons->will_accept_["bons"], bone_.get(), &BoneReader::resetSkeleton);
 	}
 	bool setup(uint16_t port = 12351) {
@@ -261,10 +270,35 @@ public:
 	void update() {
 		receiver_->update();
 	}
+	struct Info {
+		struct Head {
+			std::string ftyp;
+			char vrsn;
+		} head;
+		struct Sndf {
+			char ipad[4];
+			uint16_t rcvp;
+		} sndf;
+		struct Fram {
+			uint32_t fnum;
+			uint32_t time;
+		} fram;
+	};
 	const std::vector<ofNode>& getBones() const { return bone_->getBones(); }
+	Info getInfo() const {
+		Info ret;
+		ret.head.ftyp = (std::string)(*ftyp_);
+		ret.head.vrsn = (char)(*vrsn_);
+		memcpy(ret.sndf.ipad, (void*)(*ipad_), 4);
+		ret.sndf.rcvp = (uint16_t)(*rcvp_);
+		ret.fram.fnum = (uint32_t)(*fnum_);
+		ret.fram.time = (uint32_t)(*time_);
+		return ret;
+	}
 private:
 	std::shared_ptr<ofx::mocopi::Receiver> receiver_;
 	std::shared_ptr<ofx::mocopi::BoneReader> bone_;
+	std::shared_ptr<ofx::mocopi::RawCopyReader> ftyp_, vrsn_, ipad_, rcvp_, fnum_, time_;
 	bool is_setup_=false;
 	uint16_t port_=0;
 };
