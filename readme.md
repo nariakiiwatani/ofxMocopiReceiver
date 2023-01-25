@@ -2,7 +2,7 @@
 
 [mocopi](https://www.sony.net/Products/mocopi-dev/jp/)の[UDP送信](https://www.sony.net/Products/mocopi-dev/jp/documents/ReceiverPlugin/SendData.html)データを受信するaddonです。
 
-mocopi持ってないんですが、ネットの情報を元に作ってみました。  
+mocopi持ってないんですが、ネットの情報と[BVHSender](https://www.sony.net/Products/mocopi-dev/jp/downloads/DownloadInfo.html#BVH_Sender)からのパケットを元に作ってみました。  
 実際のデータで動かしていないので、動かなかったらごめんなさい。  
 報告をいただけると嬉しいです。  
 
@@ -33,9 +33,6 @@ const std::vector<ofNode> &skeleton = mocopi.getBones();
 - [技術仕様](https://www.sony.net/Products/mocopi-dev/jp/documents/Home/TechSpec.html)
 - [mocopiの通信内容を解析してみた Vol.01](https://zenn.dev/toyoshimorioka/articles/96dbe00b87601f)
 - [mocopiの通信内容を解析してみた Vol.02](https://zenn.dev/toyoshimorioka/articles/761fe45ebe4802)
-
-
-こちらのリポジトリ、作ってる時は気づかなかったけどパケットの解析をしっかりやってくれているので次のアップデート時に参考にさせていただきたい
 - [seagetch/mcp-receiver/doc/Protocol.md](https://github.com/seagetch/mcp-receiver/blob/main/doc/Protocol.md)
 
 
