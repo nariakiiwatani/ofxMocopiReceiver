@@ -43,7 +43,9 @@ public:
 			length -= 8;
 						
 			if(isAcceptableChunk(chunk_name, chunk_length)) {
+				willAccept(chunk_name);
 				accept(chunk_name, ptr, chunk_length);
+				didAccept(chunk_name);
 			}
 			
 			length -= chunk_length;
@@ -59,6 +61,8 @@ public:
 		}
 	}
 	virtual void decode(std::string chunk_name, const char *data, std::size_t length) {}
+	virtual void willAccept(std::string chunk_name) {}
+	virtual void didAccept(std::string chunk_name) {}
 	
 	void addReader(std::string parent_chunk_name, std::shared_ptr<Reader> reader) {
 		reader_.insert({parent_chunk_name, reader});
@@ -78,6 +82,19 @@ public:
 private:
 	std::multimap<std::string, std::shared_ptr<Reader>> reader_;
 	std::vector<std::string> acceptable_chunk_names_;
+};
+
+template<typename T, int N=1>
+class CastReader : public Reader
+{
+public:
+	void decode(std::string chunk_name, const char *data, std::size_t length) override { memcpy(data_, data, length); }
+	explicit operator T&() noexcept { return data_[0]; }
+	explicit operator const T&() const noexcept { return data_; }
+	explicit operator T*() noexcept { return data_; }
+	explicit operator const T*() const noexcept { return data_; }
+private:
+	T data_[N];
 };
 
 class Receiver : public Reader
@@ -136,18 +153,7 @@ private:
 		return checked == length;
 	}
 };
-# pragma pack (1)
-struct BtdtData {
-	uint32_t bnid_size; // 2
-	char bnid_name[4]; // bnid
-	uint16_t bnid;
-	
-	uint32_t tran_size; // 28
-	char tran_name[4]; // tran
-	float orientation[4];
-	float position[3];
-};
-# pragma pack ()
+
 class BoneReader : public Reader
 {
 public:
@@ -156,13 +162,22 @@ public:
 	BoneReader() {
 		constructSkeleton();
 		setAcceptableChunkNames({"bndt", "btdt"});
+		bone_id_ = std::make_shared<CastReader<uint16_t>>();
+		bone_id_->setAcceptableChunkNames({"bnid"});
+		addReader("btdt", bone_id_);
+		trans_ = std::make_shared<CastReader<float, 7>>();
+		trans_->setAcceptableChunkNames({"tran"});
+		addReader("btdt", trans_);
 	}
-	void decode(std::string chunk_name, const char *data, std::size_t length) {
+	void didAccept(std::string chunk_name) override {
 		if(chunk_name == "btdt") {
-			const BtdtData &d = *(BtdtData*)(data);
-			auto &bone = bone_[d.bnid];
-			bone.setPosition(d.position[0]*SCENE_SCALE, d.position[1]*SCENE_SCALE, d.position[2]*SCENE_SCALE);
-			bone.setOrientation({d.orientation[3], d.orientation[0], d.orientation[1], d.orientation[2]});
+			auto bnid = (uint16_t)(*bone_id_);
+			auto &bone = bone_[bnid];
+			auto trans = (float*)(*trans_);
+			float *o = trans;
+			float *p = trans+4;
+			bone.setPosition(p[0]*SCENE_SCALE, p[1]*SCENE_SCALE, p[2]*SCENE_SCALE);
+			bone.setOrientation({o[3], o[0], o[1], o[2]});
 		}
 	}
 	const std::vector<ofNode>& getBones() const { return bone_; }
@@ -187,6 +202,8 @@ private:
 		do_array({0,23,24,25,26});
 	}
 	std::vector<ofNode> bone_;
+	std::shared_ptr<CastReader<uint16_t>> bone_id_;
+	std::shared_ptr<CastReader<float, 7>> trans_;
 };
 }}
 
