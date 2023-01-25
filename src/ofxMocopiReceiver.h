@@ -19,7 +19,6 @@ T get(const char *data, bool swap_endian=false) {
 	}
 	return *reinterpret_cast<typename std::add_const<T>::type*>(data);
 }
-
 }
 
 namespace ofx { namespace mocopi {
@@ -84,25 +83,46 @@ private:
 	std::vector<std::string> acceptable_chunk_names_;
 };
 
-template<typename T, int N=1>
-class CastReader : public Reader
+template<typename R>
+std::shared_ptr<R> createReader(std::vector<std::string> acceptable) {
+	auto ret = std::make_shared<R>();
+	ret->setAcceptableChunkNames(acceptable);
+	return ret;
+}
+template<typename R>
+std::shared_ptr<R> createReader(std::vector<std::string> acceptable, std::vector<std::pair<std::shared_ptr<ofx::mocopi::Reader>, std::string>> parents) {
+	auto ret = createReader<R>(acceptable);
+	for(auto &&p : parents) {
+		p.first->addReader(p.second, ret);
+	}
+	return ret;
+}
+template<typename R>
+std::shared_ptr<R> createReader(std::vector<std::string> acceptable, std::vector<std::pair<ofx::mocopi::Reader*, std::string>> parents) {
+	auto ret = createReader<R>(acceptable);
+	for(auto &&p : parents) {
+		p.first->addReader(p.second, ret);
+	}
+	return ret;
+}
+
+class RawCopyReader : public Reader
 {
 public:
-	void decode(std::string chunk_name, const char *data, std::size_t length) override { memcpy(data_, data, length); }
-	explicit operator T&() noexcept { return data_[0]; }
-	explicit operator const T&() const noexcept { return data_; }
-	explicit operator T*() noexcept { return data_; }
-	explicit operator const T*() const noexcept { return data_; }
+	void decode(std::string chunk_name, const char *data, std::size_t length) override {
+		data_ = {data, length};
+	}
+	template<typename T> explicit operator T&() noexcept { return *(T*)(const_cast<char*>(data_.data())); }
+	template<typename T> explicit operator const T&() const noexcept { return *(const T*)(data_.data()); }
+	template<typename T> explicit operator T*() noexcept { return (T*)(const_cast<char*>(data_.data())); }
+	template<typename T> explicit operator const T*() const noexcept { return (const T*)(data_.data()); }
 private:
-	T data_[N];
+	std::string data_;
 };
 
 class Receiver : public Reader
 {
 public:
-	Receiver() {
-		setAcceptableChunkNames({"head", "sndf", "skdf", "fram"});
-	}
 	bool listen(uint16_t port) {
 		if(socket_.Create() && socket_.Bind(port)) {
 			socket_.SetNonBlocking(true);
@@ -162,21 +182,13 @@ public:
 	BoneReader() {
 		resetSkeleton();
 		constructSkeleton();
-		setAcceptableChunkNames({"bndt", "btdt"});
+		
+		pbid_ = createReader<RawCopyReader>({"pbid"}, {{this, "bndt"}});
+		bnid_ = createReader<RawCopyReader>({"bnid"}, {{this, "bndt"}, {this, "btdt"}});
+		trans_ = createReader<RawCopyReader>({"tran"}, {{this, "bndt"}, {this, "btdt"}});
+		
 		ofAddListener(did_accept_["bndt"], this, &BoneReader::updateDefinition);
 		ofAddListener(did_accept_["btdt"], this, &BoneReader::updateTransform);
-		
-		pbid_ = std::make_shared<CastReader<uint16_t>>();
-		pbid_->setAcceptableChunkNames({"pbid"});
-		addReader("bndt", pbid_);
-		bnid_ = std::make_shared<CastReader<uint16_t>>();
-		bnid_->setAcceptableChunkNames({"bnid"});
-		addReader("bndt", bnid_);
-		addReader("btdt", bnid_);
-		trans_ = std::make_shared<CastReader<float, 7>>();
-		trans_->setAcceptableChunkNames({"tran"});
-		addReader("bndt", trans_);
-		addReader("btdt", trans_);
 	}
 
 	void updateDefinition() {
@@ -220,8 +232,7 @@ private:
 		do_array({7,23,24,25,26});
 	}
 	std::vector<ofNode> bone_;
-	std::shared_ptr<CastReader<uint16_t>> bnid_, pbid_;
-	std::shared_ptr<CastReader<float, 7>> trans_;
+	std::shared_ptr<RawCopyReader> bnid_, pbid_, trans_;
 };
 }}
 
@@ -230,19 +241,13 @@ class ofxMocopiReceiver
 public:
 	ofxMocopiReceiver() {
 		using namespace ofx::mocopi;
-		receiver_ = std::make_shared<Receiver>();
-		bone_ = std::make_shared<BoneReader>();
+		receiver_ = createReader<Receiver>({"head", "sndf", "skdf", "fram"});
 
-		auto bons = std::make_shared<Reader>();
-		bons->setAcceptableChunkNames({"bons"});
-		receiver_->addReader("skdf", bons);
-		bons->addReader("bons", bone_);
+		auto bons = createReader<Reader>({"bons"}, {{receiver_, "skdf"}});
+		auto btrs = createReader<Reader>({"btrs"}, {{receiver_, "fram"}});
+		bone_ = createReader<BoneReader>({"bndt", "btdt"}, {{bons, "bons"}, {btrs, "btrs"}});
+
 		ofAddListener(bons->will_accept_["bons"], bone_.get(), &BoneReader::resetSkeleton);
-		
-		auto btrs = std::make_shared<Reader>();
-		btrs->setAcceptableChunkNames({"btrs"});
-		receiver_->addReader("fram", btrs);
-		btrs->addReader("btrs", bone_);
 	}
 	bool setup(uint16_t port = 12351) {
 		if(is_setup_) {
