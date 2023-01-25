@@ -228,8 +228,8 @@ private:
 		do_array({0,1,2,3,4,5,6,7,8,9,10});
 		do_array({7,11,12,13,14});
 		do_array({7,15,16,17,18});
-		do_array({7,19,20,21,22});
-		do_array({7,23,24,25,26});
+		do_array({0,19,20,21,22});
+		do_array({0,23,24,25,26});
 	}
 	std::vector<ofNode> bone_;
 	std::shared_ptr<RawCopyReader> bnid_, pbid_, trans_;
