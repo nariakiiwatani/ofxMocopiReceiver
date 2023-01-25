@@ -43,9 +43,9 @@ public:
 			length -= 8;
 						
 			if(isAcceptableChunk(chunk_name, chunk_length)) {
-				willAccept(chunk_name);
+				ofNotifyEvent(will_accept_[chunk_name], this);
 				accept(chunk_name, ptr, chunk_length);
-				didAccept(chunk_name);
+				ofNotifyEvent(did_accept_[chunk_name], this);
 			}
 			
 			length -= chunk_length;
@@ -61,8 +61,6 @@ public:
 		}
 	}
 	virtual void decode(std::string chunk_name, const char *data, std::size_t length) {}
-	virtual void willAccept(std::string chunk_name) {}
-	virtual void didAccept(std::string chunk_name) {}
 	
 	void addReader(std::string parent_chunk_name, std::shared_ptr<Reader> reader) {
 		reader_.insert({parent_chunk_name, reader});
@@ -78,6 +76,8 @@ public:
 		ofLogWarning("ofxMocopiReceiver") << "reader not found";
 		return;
 	}
+
+	std::map<std::string, ofEvent<void>> will_accept_, did_accept_;
 
 private:
 	std::multimap<std::string, std::shared_ptr<Reader>> reader_;
@@ -160,33 +160,51 @@ public:
 	static const std::size_t NUM_BONES = 27;
 	static constexpr float SCENE_SCALE = 1000.f;
 	BoneReader() {
+		resetSkeleton();
 		constructSkeleton();
 		setAcceptableChunkNames({"bndt", "btdt"});
-		bone_id_ = std::make_shared<CastReader<uint16_t>>();
-		bone_id_->setAcceptableChunkNames({"bnid"});
-		addReader("btdt", bone_id_);
+		ofAddListener(did_accept_["bndt"], this, &BoneReader::updateDefinition);
+		ofAddListener(did_accept_["btdt"], this, &BoneReader::updateTransform);
+		
+		pbid_ = std::make_shared<CastReader<uint16_t>>();
+		pbid_->setAcceptableChunkNames({"pbid"});
+		addReader("bndt", pbid_);
+		bnid_ = std::make_shared<CastReader<uint16_t>>();
+		bnid_->setAcceptableChunkNames({"bnid"});
+		addReader("bndt", bnid_);
+		addReader("btdt", bnid_);
 		trans_ = std::make_shared<CastReader<float, 7>>();
 		trans_->setAcceptableChunkNames({"tran"});
+		addReader("bndt", trans_);
 		addReader("btdt", trans_);
 	}
-	void didAccept(std::string chunk_name) override {
-		if(chunk_name == "btdt") {
-			auto bnid = (uint16_t)(*bone_id_);
-			auto &bone = bone_[bnid];
-			auto trans = (float*)(*trans_);
-			float *o = trans;
-			float *p = trans+4;
-			bone.setPosition(p[0]*SCENE_SCALE, p[1]*SCENE_SCALE, p[2]*SCENE_SCALE);
-			bone.setOrientation({o[3], o[0], o[1], o[2]});
+
+	void updateDefinition() {
+		auto bnid = (uint16_t)(*bnid_);
+		auto pbid = (uint16_t)(*pbid_);
+		if(bnid < NUM_BONES && pbid < NUM_BONES) {
+			bone_[bnid].setParent(bone_[pbid]);
 		}
+		updateTransform();
+	}
+	void updateTransform() {
+		auto bnid = (uint16_t)(*bnid_);
+		auto &bone = bone_[bnid];
+		auto trans = (float*)(*trans_);
+		float *o = trans;
+		float *p = trans+4;
+		bone.setPosition(p[0]*SCENE_SCALE, p[1]*SCENE_SCALE, p[2]*SCENE_SCALE);
+		bone.setOrientation({o[3], o[0], o[1], o[2]});
 	}
 	const std::vector<ofNode>& getBones() const { return bone_; }
-private:
-	void constructSkeleton() {
+	void resetSkeleton() {
 		bone_.resize(NUM_BONES);
 		for(auto &&b : bone_) {
 			b.clearParent();
 		}
+	}
+private:
+	void constructSkeleton() {
 		auto do_index = [&](std::size_t c, std::size_t p) {
 			bone_[c].setParent(bone_[p]);
 		};
@@ -196,13 +214,13 @@ private:
 			}
 		};
 		do_array({0,1,2,3,4,5,6,7,8,9,10});
-		do_array({6,11,12,13,14});
-		do_array({6,15,16,17,18});
-		do_array({0,19,20,21,22});
-		do_array({0,23,24,25,26});
+		do_array({7,11,12,13,14});
+		do_array({7,15,16,17,18});
+		do_array({7,19,20,21,22});
+		do_array({7,23,24,25,26});
 	}
 	std::vector<ofNode> bone_;
-	std::shared_ptr<CastReader<uint16_t>> bone_id_;
+	std::shared_ptr<CastReader<uint16_t>> bnid_, pbid_;
 	std::shared_ptr<CastReader<float, 7>> trans_;
 };
 }}
@@ -213,15 +231,17 @@ public:
 	ofxMocopiReceiver() {
 		using namespace ofx::mocopi;
 		receiver_ = std::make_shared<Receiver>();
+		bone_ = std::make_shared<BoneReader>();
+
 		auto bons = std::make_shared<Reader>();
 		bons->setAcceptableChunkNames({"bons"});
 		receiver_->addReader("skdf", bons);
+		bons->addReader("bons", bone_);
+		ofAddListener(bons->will_accept_["bons"], bone_.get(), &BoneReader::resetSkeleton);
+		
 		auto btrs = std::make_shared<Reader>();
 		btrs->setAcceptableChunkNames({"btrs"});
 		receiver_->addReader("fram", btrs);
-		
-		bone_ = std::make_shared<BoneReader>();
-		bons->addReader("bons", bone_);
 		btrs->addReader("btrs", bone_);
 	}
 	bool setup(uint16_t port = 12351) {
